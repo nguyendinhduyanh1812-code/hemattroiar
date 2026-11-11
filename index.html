@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Hệ Mặt Trời AR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<style>
+  :root { --ink:#e9ecf5; --mute:#9aa4c0; --sun:#ffb020; --bg:rgba(9,13,28,.93); }
+  html, body { margin:0; height:100%; overflow:hidden; font-family:'Be Vietnam Pro',system-ui,sans-serif; }
+  #hint { position:fixed; top:max(14px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+          z-index:5; padding:8px 16px; border-radius:99px; background:var(--bg); color:var(--ink);
+          font-size:14px; white-space:nowrap; transition:opacity .4s; pointer-events:none; }
+  #panel { position:fixed; left:0; right:0; bottom:0; z-index:6; box-sizing:border-box;
+           max-width:520px; margin:0 auto; padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+           background:var(--bg); color:var(--ink); border-radius:20px 20px 0 0;
+           border-top:3px solid var(--sun); transform:translateY(105%); transition:transform .3s ease; }
+  #panel.open { transform:none; }
+  #panel h2 { margin:0 0 12px; font-size:26px; font-weight:700; color:var(--sun); }
+  #panel dl { display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:0 0 14px; font-size:15px; }
+  #panel dt { color:var(--mute); }
+  #panel dd { margin:0; }
+  #panel p { margin:0; font-size:15px; line-height:1.55; }
+  #close { position:absolute; top:10px; right:12px; width:44px; height:44px; border:0; background:none;
+           color:var(--mute); font-size:28px; cursor:pointer; }
+  #close:focus-visible { outline:2px solid var(--sun); border-radius:8px; }
+  @media (prefers-reduced-motion:reduce) { #panel, #hint { transition:none; } }
+</style>
+<script>
+  // ====== DỮ LIỆU THÔNG TIN (sửa tự do). Khóa phải TRÙNG TÊN đối tượng trong Blender ======
+  // Số vệ tinh của các hành tinh khí được cập nhật liên tục, hãy kiểm tra lại trước khi công bố.
+  const INFO = {
+    Sun:     { ten:'Mặt Trời', r:[['Loại','Sao'],['Đường kính','1,39 triệu km'],['Nhiệt độ bề mặt','khoảng 5.500 °C'],['Khối lượng','~99,86% cả hệ Mặt Trời']],
+               fun:'Ánh sáng từ Mặt Trời mất khoảng 8 phút để đến Trái Đất.' },
+    Mercury: { ten:'Sao Thủy', r:[['Đường kính','4.879 km'],['Cách Mặt Trời','57,9 triệu km'],['Một năm','88 ngày'],['Vệ tinh','0'],['Nhiệt độ','−180 đến 430 °C']],
+               fun:'Hành tinh nhỏ nhất và gần Mặt Trời nhất.' },
+    Venus:   { ten:'Sao Kim', r:[['Đường kính','12.104 km'],['Cách Mặt Trời','108,2 triệu km'],['Một năm','225 ngày'],['Vệ tinh','0'],['Nhiệt độ','~465 °C']],
+               fun:'Nóng hơn cả Sao Thủy nhờ hiệu ứng nhà kính, và quay ngược chiều so với hầu hết hành tinh.' },
+    Earth:   { ten:'Trái Đất', r:[['Đường kính','12.756 km'],['Cách Mặt Trời','149,6 triệu km'],['Một năm','365,25 ngày'],['Vệ tinh','1'],['Nhiệt độ TB','~15 °C']],
+               fun:'Hành tinh duy nhất được biết là có sự sống.' },
+    Mars:    { ten:'Sao Hỏa', r:[['Đường kính','6.792 km'],['Cách Mặt Trời','227,9 triệu km'],['Một năm','687 ngày'],['Vệ tinh','2'],['Nhiệt độ TB','~−60 °C']],
+               fun:'Có Olympus Mons, ngọn núi lửa cao nhất hệ Mặt Trời.' },
+    Jupiter: { ten:'Sao Mộc', r:[['Đường kính','142.984 km'],['Cách Mặt Trời','778,5 triệu km'],['Một năm','11,9 năm'],['Vệ tinh','hơn 90'],['Nhiệt độ','~−110 °C (đỉnh mây)']],
+               fun:'Vết Đỏ Lớn là một cơn bão đã tồn tại hàng trăm năm.' },
+    Saturn:  { ten:'Sao Thổ', r:[['Đường kính','120.536 km'],['Cách Mặt Trời','1,43 tỷ km'],['Một năm','29,4 năm'],['Vệ tinh','hơn 200'],['Nhiệt độ','~−140 °C']],
+               fun:'Nhẹ hơn nước: nếu có bể nước đủ lớn, Sao Thổ sẽ nổi.' },
+    Uranus:  { ten:'Sao Thiên Vương', r:[['Đường kính','51.118 km'],['Cách Mặt Trời','2,87 tỷ km'],['Một năm','84 năm'],['Vệ tinh','28'],['Nhiệt độ','~−195 °C']],
+               fun:'Trục quay nghiêng gần 98°, nên nó như đang “lăn” quanh Mặt Trời.' },
+    Neptune: { ten:'Sao Hải Vương', r:[['Đường kính','49.528 km'],['Cách Mặt Trời','4,50 tỷ km'],['Một năm','165 năm'],['Vệ tinh','16'],['Nhiệt độ','~−200 °C']],
+               fun:'Có gió mạnh nhất hệ Mặt Trời, vượt 2.000 km/h.' }
+  };
+  const ORDER = ['Sun','Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune'];
+  // Tốc độ tương đối (đã nén lại cho dễ nhìn, không theo tỉ lệ thật)
+  const SPEED = { Mercury:1.6, Venus:1.17, Earth:1, Mars:.8, Jupiter:.43, Saturn:.32, Uranus:.23, Neptune:.18 };
+  const BASE = 0.4;   // rad/giây cho Trái Đất: tăng = quay nhanh hơn
+  const HIT  = 1.5;   // vùng chạm so với bán kính hành tinh: tăng = dễ chạm hơn
+  const GLOW = 3.2;   // kích thước quầng sáng Mặt Trời (theo bán kính Mặt Trời)
+  let paused = false;
+
+  const ALIAS = { SaturnRings:'Saturn' };   // chạm vào vành đai cũng mở thông tin Sao Thổ
+
+  AFRAME.registerComponent('solar', {
+    init() {
+      const T = AFRAME.THREE;
+      this.planets = [];
+      this.el.addEventListener('model-loaded', () => {
+        const root = this.el.getObject3D('mesh');
+        // Đường quỹ đạo chỉ để nhìn: hiện cả hai mặt, không bắt chạm
+        root.traverse(n => {
+          if (n.name.startsWith('Orbit_')) { n.raycast = () => {}; }
+          if (n.material && (n.name.startsWith('Orbit_') || n.name === 'SaturnRings')) n.material.side = T.DoubleSide;
+        });
+        const rings = root.getObjectByName('SaturnRings');
+        const hitMat = new T.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false });
+        ORDER.forEach(name => {
+          const o = root.getObjectByName(name);
+          if (!o || !o.geometry) { console.warn('Không tìm thấy đối tượng:', name); return; }
+          // Trong file GLB này, vị trí hành tinh nằm sẵn trong mesh (gốc node = 0,0,0),
+          // nên lấy tâm thật từ hộp bao của mesh.
+          o.geometry.computeBoundingBox();
+          const box = o.geometry.boundingBox, c0 = box.getCenter(new T.Vector3()), sz = box.getSize(new T.Vector3());
+          const rad = Math.max(sz.x, sz.y, sz.z) / 2;
+          if (name === 'Sun') {
+            // Quầng sáng cho Mặt Trời (bloom của Blender không xuất được sang GLB)
+            const c = document.createElement('canvas'); c.width = c.height = 128;
+            const g = c.getContext('2d'), gr = g.createRadialGradient(64,64,0,64,64,64);
+            gr.addColorStop(0,'rgba(255,210,90,1)'); gr.addColorStop(.35,'rgba(255,150,30,.45)'); gr.addColorStop(1,'rgba(255,120,0,0)');
+            g.fillStyle = gr; g.fillRect(0,0,128,128);
+            const glow = new T.Sprite(new T.SpriteMaterial({ map:new T.CanvasTexture(c),
+                         blending:T.AdditiveBlending, depthWrite:false, transparent:true }));
+            glow.scale.setScalar(rad * GLOW); o.add(glow);
+          } else {
+            // Quả cầu trong suốt để dễ chạm trúng
+            const hit = new T.Mesh(new T.SphereGeometry(rad * HIT, 12, 12), hitMat);
+            hit.position.copy(c0); o.add(hit);
+            this.planets.push({ o, c0, r:Math.hypot(c0.x, c0.z), a:Math.atan2(-c0.z, c0.x),
+                                s:SPEED[name] || .3, follow:name === 'Saturn' ? rings : null });
+          }
+        });
+        document.querySelector('a-camera').components.raycaster.refreshObjects();
+      });
+      this.el.addEventListener('click', e => {
+        let o = e.detail.intersection && e.detail.intersection.object;
+        while (o && !INFO[ALIAS[o.name] || o.name]) o = o.parent;
+        if (o) showPanel(ALIAS[o.name] || o.name);
+      });
+    },
+    tick(t, dt) {
+      if (paused) return;
+      this.planets.forEach(p => {
+        p.a += p.s * BASE * dt / 1000;
+        // vị trí mong muốn của tâm hành tinh, trừ đi tâm gốc đã nằm sẵn trong mesh
+        p.o.position.set(p.r * Math.cos(p.a) - p.c0.x, 0, -p.r * Math.sin(p.a) - p.c0.z);
+        if (p.follow) p.follow.position.copy(p.o.position);   // vành đai đi theo Sao Thổ
+      });
+    }
+  });
+
+  function showPanel(name) {
+    const d = INFO[name];
+    document.getElementById('name').textContent = d.ten;
+    document.getElementById('rows').innerHTML = d.r.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    document.getElementById('fun').textContent = d.fun;
+    document.getElementById('panel').classList.add('open');
+    document.getElementById('hint').style.opacity = 0;
+    paused = true;
+  }
+  function closePanel() { document.getElementById('panel').classList.remove('open'); paused = false; }
+</script>
+</head>
+<body>
+  <div id="hint">Chạm vào hành tinh để xem thông tin</div>
+
+  <div id="panel" role="dialog" aria-labelledby="name">
+    <button id="close" aria-label="Đóng" onclick="closePanel()">×</button>
+    <h2 id="name"></h2>
+    <dl id="rows"></dl>
+    <p id="fun"></p>
+  </div>
+
+  <a-scene mindar-image="imageTargetSrc: ./targets.mind; maxTrack: 1; uiLoading: yes; uiScanning: yes; uiError: yes;"
+           vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+    <a-assets>
+      <a-asset-item id="model" src="./solar-system.glb"></a-asset-item>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"
+              cursor="fuse: false; rayOrigin: mouse;" raycaster="far: 10000; objects: .clickable"></a-camera>
+
+    <a-light type="ambient" intensity="0.5"></a-light>
+
+    <a-entity mindar-image-target="targetIndex: 0">
+      <!-- Quỹ đạo ngoài cùng (Sao Hải Vương) dài 13 đơn vị: scale 0.035 cho hệ rộng ~0,9 bề ngang marker -->
+      <a-gltf-model class="clickable" solar src="#model" rotation="90 0 0" scale="0.035 0.035 0.035">
+        <a-entity light="type: point; intensity: 2.5; decay: 0; distance: 0"></a-entity>
+      </a-gltf-model>
+    </a-entity>
+  </a-scene>
+</body>
+</html>
